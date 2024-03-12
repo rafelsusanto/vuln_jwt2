@@ -5,22 +5,15 @@ from django.urls import reverse
 from django.contrib.auth import authenticate
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from .decorators import jwt_required
 from django.utils import timezone
 from .models import BlacklistedToken
-
-
-def get_tokens_for_user(user):
-    refresh = RefreshToken.for_user(user)
-
-    return {
-        'refresh': str(refresh),
-        'access': str(refresh.access_token),
-    }
+import jwt
+from django.conf import settings
+from .utils import get_tokens_for_user
+from django.contrib.auth import get_user_model
 
 def my_login_view(request):
     # Attempt to authenticate the user using the JWT token if already logged in
@@ -28,10 +21,11 @@ def my_login_view(request):
     if access_token:
         try:
             # Decode the token to check its validity
-            AccessToken(access_token)
+            payload = jwt.decode(access_token, settings.SECRET_KEY, algorithms=["HS256"])
+            print(settings.SECRET_KEY)
             # If the token is valid, redirect to the home page
             return redirect(reverse('home_page'))
-        except (InvalidToken, TokenError):
+        except:
             # If the token is invalid, remove it and proceed to login page
             response = render(request, 'login.html')
             response.delete_cookie('access')
@@ -58,24 +52,46 @@ def home_page(request):
 
 @jwt_required
 def admin_page(request):
-    # print(request.user)
-    # Check if the user is an admin
-    if request.user.is_staff:
-        return render(request, 'admin.html')
-    else:
+    token = request.COOKIES.get('access', None)
+    if token is None:
+        # If there's no token in the cookies, redirect to login
+        return redirect('/login/')
+    
+    try:
+        # Decode the token to get the payload
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id = payload.get('user_id')
+    
+        
+         # Check if the user exists and is an admin
+        User = get_user_model()
+        try:
+            
+            user = User.objects.get(id=user_id, is_staff=True)
+            # User is an admin
+            return render(request, 'admin.html')
+        except User.DoesNotExist:
+            # User does not exist or is not an admin
+            return render(request, '403.html')
+
+            
+    except:
+        # If there's any error with the token or user does not exist, redirect to login
         return render(request, '403.html')
 
 def logout(request):
     token = request.COOKIES.get('access', None)
     if token:
         try:
-            # Attempt to decode the token
-            decoded_token = AccessToken(token)
+            # Attempt to decode the token to check if it's valid
+            decoded_token = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            # You could implement additional logic here if needed, such as logging the logout event
             expires_at = timezone.datetime.fromtimestamp(decoded_token['exp'], timezone.utc)
-            
-            # Add the token to the blacklist
             BlacklistedToken.objects.create(token=token, expires_at=expires_at)
-        except (InvalidToken, TokenError):
+        except jwt.ExpiredSignatureError:
+            # Token is expired but we still proceed with logout
+            pass
+        except jwt.InvalidTokenError:
             # If the token is invalid, just redirect to login
             return redirect('/login/')
 

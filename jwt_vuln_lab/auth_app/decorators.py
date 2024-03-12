@@ -1,21 +1,33 @@
 from django.shortcuts import redirect
 from django.conf import settings
-from rest_framework_simplejwt.tokens import AccessToken
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.contrib.auth import get_user_model
+import jwt
+from functools import wraps
 
 def jwt_required(f):
+    @wraps(f)
     def wrap(request, *args, **kwargs):
-        User = get_user_model()  # Move this line to the top of wrap function
+        User = get_user_model()
         token = request.COOKIES.get('access', None)
         if token:
             try:
-                valid_token = AccessToken(token)
-                user_id = valid_token['user_id']
+                # Decode the token
+                payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+                user_id = payload.get('user_id')
+                if not user_id:
+                    raise jwt.InvalidTokenError  # Raise error if user_id is not in payload
+
+                # Get the user and attach to request
                 user = User.objects.get(id=user_id)
                 request.user = user
+
+                # Proceed with the original function
                 return f(request, *args, **kwargs)
-            except (InvalidToken, TokenError, User.DoesNotExist):
-                pass  # Consider handling this case more explicitly, perhaps logging or redirecting
+            except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, User.DoesNotExist):
+                # Log the error or handle it as needed
+                pass  # This could redirect to login, show an error message, etc.
+        
+        # If no token or token is invalid, redirect to LOGIN_URL
         return redirect(settings.LOGIN_URL)
+
     return wrap
