@@ -11,4 +11,7 @@ def get_tokens_for_user(user):
     }
     
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+
+    if isinstance(token, bytes):
+        token = token.decode('utf-8')
     return {'access': token}

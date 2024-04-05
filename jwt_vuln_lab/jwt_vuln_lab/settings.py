@@ -91,8 +91,8 @@ DATABASES = {
         'NAME': 'jwt1',
         'HOST': 'localhost',
         'PORT': '3306',
-        'USER': 'jwt_user',
-        'PASSWORD': 'H4a89fsj@!fwa',
+        'USER': 'root',
+        'PASSWORD': '',
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
         },
